@@ -1,8 +1,23 @@
 # 自动化科研 Skill
 
-这是一个面向 Codex 的自动化科研工作流 skill，用于辅助科学与工程方向的文献调研、研究路线比较、方案细化、实验执行、结果验证和论文写作。
+一个面向 Codex 的自动化科研流程控制器：从文献路线、实验注册表、claim ledger 到泄漏审计，避免“自动跑实验但科研不成立”。
 
-它不是简单的“自动跑实验”提示词，而是一套带确认门、证据约束和实验审计的科研流程控制器。
+![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
+![Codex Skill](https://img.shields.io/badge/Codex-Skill-111827)
+![Research Workflow](https://img.shields.io/badge/Workflow-Stage%200--4-2563eb)
+![Claim Ledger](https://img.shields.io/badge/Integrity-Claim%20Ledger-16a34a)
+
+它不是简单的“给 AI 一个目标然后自动跑实验”的脚本，而是一套带确认门、证据约束、实验审计和论文守门的科研工作流 skill。适合 AI、信号处理、生物医学、控制、材料、机械等需要真实数据、实验闭环和论文交付的研究项目。
+
+## 为什么需要它
+
+很多“自动化科研”流程容易出现三个问题：
+
+- 没有真实数据源就开始设计路线；
+- 只追单一分数或 review 分数，忽略泄漏、过拟合和协议漂移；
+- 实验没验证完，就把结果写成论文贡献。
+
+这个 skill 的核心目标是把这些风险前置：先确认数据和路线，再锁定协议，最后用指标、guardrail、泄漏审计和 claim ledger 判断结果是否真的成立。
 
 ## 核心能力
 
@@ -16,6 +31,20 @@
 - claim ledger：记录论文或报告中每个关键结论的证据状态
 - review score sanity check：评审分数只能作为诊断信号，不能作为唯一目标
 - 中文工程论文写作、润色、图表叙述和 claim-evidence 审核
+
+## 适合谁
+
+- 想用 Codex 做科研项目管理、实验执行和论文整理的用户
+- 需要把“文献路线 - 实验 - 结果 - 论文 claim”串起来的研究者
+- 做 AI/机器学习、信号处理、生物医学、控制、材料、机械等方向的学生或工程研究人员
+- 不想让自动化实验变成“刷高分但不可复现”的团队
+
+## 不适合什么
+
+- 没有真实数据源、数据集或明确数据获取路径的空想项目
+- 只想让模型无限试错刷分、但不关心泄漏和验证的任务
+- 需要伪造论文、实验、指标、引用或审稿意见的任务
+- 只想做文字包装、不愿暴露未验证 claim 的论文写作
 
 ## 工作阶段
 
@@ -37,6 +66,26 @@ Copy-Item -Recurse .\autonomous-scientific-research "$env:USERPROFILE\.codex\ski
 
 然后重启 Codex。
 
+## 快速使用
+
+在 Codex 中可以这样触发：
+
+```text
+使用 autonomous-scientific-research，帮我围绕这个研究方向做 Stage 0 intake，并检查真实数据源、研究目标、约束和成功标准。
+```
+
+如果已经有数据和方向，可以继续：
+
+```text
+使用 autonomous-scientific-research，基于我的数据和目标做 Stage 1 文献综述，给出 3-5 条候选研究路线，先不要实现，等我确认路线。
+```
+
+如果已经确认方案，可以进入实验：
+
+```text
+使用 autonomous-scientific-research，按已确认的 Stage 2 方案启动 Stage 3，先锁定 baseline、数据版本、split、primary metric、guardrail 和 keep/discard 规则。
+```
+
 ## Python 环境配置
 
 如果需要执行科研代码，请配置 GPU Python 解释器路径：
@@ -55,6 +104,16 @@ $env:AUTONOMOUS_RESEARCH_PYTHON="C:\Users\<you>\.conda\envs\GPU\python.exe"
 - `autonomous-scientific-research/references/`：工作流、证据规则、领域分流、写作规则、实验循环和评审完整性规则
 - `autonomous-scientific-research/scripts/init_stage3_registry.py`：初始化 Stage 3 实验注册表的辅助脚本
 - `autonomous-scientific-research/agents/openai.yaml`：Codex UI 元数据
+
+## 亮点：不把 review 分数当唯一目标
+
+这个 skill 专门加入了 review-score sanity control：
+
+- 高 review 分数不等于方法成立；
+- 低 review 分数不等于方法无效；
+- reviewer comment 需要先分级：validity-critical、method-critical、evidence-critical、presentation-critical、style-preference；
+- 如果 review 分数提高，但泄漏风险、guardrail、claim 支撑或协议可比性变差，该分支应被丢弃或标记为 exploratory；
+- 只有 metric gate、guardrail gate、leakage/overfit audit、claim ledger 和复现实物同时过关，才可以说科研结果成立。
 
 ## 设计原则
 
