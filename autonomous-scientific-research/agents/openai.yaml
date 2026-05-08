@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Copilot"
+  short_description: "Validated research loops with claim-ledger checks"
+  default_prompt: "Use $autonomous-scientific-research to review the route, confirm the best plan, then keep iterating Stage 3 or Stage 4 until the metric gates, claim ledger, leakage audit, and validation target pass or a real blocker is proved."
