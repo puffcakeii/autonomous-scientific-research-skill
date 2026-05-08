@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="自动化科研 Skill" width="100%" />
+  <img src="assets/research-hero.png" alt="自动化科研 Skill" width="100%" />
 </p>
 
 <p align="center">
@@ -53,7 +53,7 @@
 ## 工作流
 
 <p align="center">
-  <img src="assets/workflow.svg" alt="Stage 0-4 自动化科研工作流" width="100%" />
+  <img src="assets/workflow-tree.png" alt="Stage 0-4 自动化科研工作流分类树" width="100%" />
 </p>
 
 | 阶段 | 目标 | 关键产物 |
