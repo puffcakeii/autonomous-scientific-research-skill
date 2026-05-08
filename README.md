@@ -69,4 +69,6 @@ $env:AUTONOMOUS_RESEARCH_PYTHON="C:\Users\<you>\.conda\envs\GPU\python.exe"
 
 ## 许可证
 
-当前仓库尚未添加许可证。公开复用或接受贡献前，建议补充明确的开源许可证。
+本项目采用 GNU General Public License v3.0 开源许可证，详见 [LICENSE](LICENSE)。
+
+这意味着你可以使用、复制、修改和分发本项目，但如果你分发修改后的版本，也需要按照 GPL-3.0 的要求开放相应源代码并保留许可证说明。
