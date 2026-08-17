@@ -1,0 +1,60 @@
+name: CVPR 2025 quality-controlled 1000-paper audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cvpr1000_fulltext_audit_v2.yml'
+      - 'scripts/build_cvpr2025_fulltext_audit.py'
+      - 'scripts/build_cvpr2025_fulltext_audit_v2.py'
+
+permissions:
+  contents: read
+
+env:
+  TARGET_N: '1000'
+  CVPR_TEXT_ROOT: external/CVPR2025_TXT/papers
+  AUDIT_OUT: artifacts/cvpr1000_audit_v2
+  PYTHONPATH: scripts
+
+jobs:
+  build-audit-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip numpy scikit-learn
+      - name: Clone CVPR 2025 full-text mirror
+        run: |
+          mkdir -p external
+          git clone --depth 1 https://github.com/qinhy/CVPR2025_TXT.git external/CVPR2025_TXT
+          test "$(find external/CVPR2025_TXT/papers -type f -name '*.txt' | wc -l)" -gt 2500
+      - name: Build quality-controlled audit
+        run: python scripts/build_cvpr2025_fulltext_audit_v2.py
+      - name: Verify quality contract
+        run: |
+          python - <<'PY'
+          import csv, json, pathlib
+          root = pathlib.Path('artifacts/cvpr1000_audit_v2')
+          rows = list(csv.DictReader((root/'registry.csv').open(encoding='utf-8')))
+          qc = json.loads((root/'quality_control_summary.json').read_text(encoding='utf-8'))
+          fulltexts = list((root/'fulltext').glob('*.txt'))
+          assert len(rows) == 1000
+          assert len(fulltexts) == 1000
+          assert qc['selected_fulltexts'] == 1000
+          assert qc['quality_eligible_fulltexts'] >= 1000
+          assert qc['selection_word_count_min'] >= 3000
+          assert (root/'SHA256SUMS.txt').exists()
+          print(json.dumps(qc, ensure_ascii=False, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cvpr2025-1000-fulltext-audit-v2
+          path: artifacts/cvpr1000_audit_v2
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 7
