@@ -7,6 +7,7 @@ on:
       - '.github/workflows/cvpr1000_fulltext_audit_v2.yml'
       - 'scripts/build_cvpr2025_fulltext_audit.py'
       - 'scripts/build_cvpr2025_fulltext_audit_v2.py'
+      - 'scripts/run_cvpr2025_fulltext_audit_v2.py'
 
 permissions:
   contents: read
@@ -34,7 +35,7 @@ jobs:
           git clone --depth 1 https://github.com/qinhy/CVPR2025_TXT.git external/CVPR2025_TXT
           test "$(find external/CVPR2025_TXT/papers -type f -name '*.txt' | wc -l)" -gt 2500
       - name: Build quality-controlled audit
-        run: python scripts/build_cvpr2025_fulltext_audit_v2.py
+        run: python scripts/run_cvpr2025_fulltext_audit_v2.py
       - name: Verify quality contract
         run: |
           python - <<'PY'
