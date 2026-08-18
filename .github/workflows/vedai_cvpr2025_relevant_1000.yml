@@ -1,0 +1,65 @@
+name: VEDAI CVPR2025 relevance-controlled 1000 audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/vedai_cvpr2025_relevant_1000.yml'
+      - 'scripts/build_vedai_cvpr2025_relevant_1000.py'
+      - 'scripts/build_cvpr2025_fulltext_audit.py'
+      - 'scripts/build_cvpr2025_fulltext_audit_v2.py'
+
+permissions:
+  contents: read
+
+env:
+  TARGET_N: '1000'
+  CVPR_TEXT_ROOT: external/CVPR2025_TXT/papers
+  AUDIT_OUT: artifacts/vedai_cvpr2025_relevant_1000
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy scikit-learn
+      - name: Clone CVPR 2025 full-text mirror
+        run: |
+          mkdir -p external
+          git clone --depth 1 https://github.com/qinhy/CVPR2025_TXT.git external/CVPR2025_TXT
+          n=$(find external/CVPR2025_TXT/papers -type f -name '*.txt' | wc -l)
+          echo "full texts=$n"
+          test "$n" -gt 2800
+      - name: Parse all full texts and select 1,000 by VEDAI decision relevance
+        env:
+          PYTHONPATH: scripts
+        run: python scripts/build_vedai_cvpr2025_relevant_1000.py
+      - name: Verify contract
+        run: |
+          python - <<'PY'
+          import csv,json,pathlib
+          r=pathlib.Path('artifacts/vedai_cvpr2025_relevant_1000')
+          rows=list(csv.DictReader((r/'registry_1000.csv').open(encoding='utf-8-sig')))
+          q=list(csv.DictReader((r/'question_evidence_matrix.csv').open(encoding='utf-8-sig')))
+          s=json.loads((r/'audit_summary.json').read_text(encoding='utf-8'))
+          assert len(rows)==1000
+          assert len(q)==900 and len({x['question_id'] for x in q})==18
+          assert s['selected_fulltexts']==1000
+          assert s['unique_paper_ids']==1000
+          assert s['unique_fulltext_sha256']==1000
+          assert s['word_count_min']>=3000
+          assert s['quality_eligible_fulltexts']>=1000
+          assert (r/'SHA256SUMS.txt').exists()
+          print(json.dumps(s,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vedai-cvpr2025-relevant-1000-audit
+          path: artifacts/vedai_cvpr2025_relevant_1000
+          compression-level: 9
+          retention-days: 7
