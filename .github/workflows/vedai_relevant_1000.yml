@@ -1,110 +1,19 @@
-name: VEDAI relevant 1000-paper full-text audit
+name: VEDAI relevant 1000-paper full-text audit (superseded)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - literature/vedai-1000-relevant
-    paths:
-      - '.github/workflows/vedai_relevant_1000.yml'
-      - 'scripts/vedai_lit_parts/**'
   pull_request:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/vedai_relevant_1000.yml'
-      - 'scripts/vedai_lit_parts/**'
+    branches: [main]
+
+concurrency:
+  group: vedai-superseded-single-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
-env:
-  TARGET_N: '1000'
-  AUDIT_OUT: artifacts/vedai_relevant_1000
-  AUDIT_CACHE: .cache/vedai_literature
-  YEAR_MIN: '2021'
-  YEAR_MAX: '2026'
-  MAX_CANDIDATES: '9000'
-  MAX_DOWNLOAD_ATTEMPTS: '3200'
-  MIN_WORDS: '2600'
-  MAX_PDF_MB: '60'
-  WORKERS: '40'
-
 jobs:
-  audit:
+  disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
     steps:
-      - name: Check out audit branch
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install full-text audit dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install requests pymupdf numpy pandas scikit-learn
-
-      - name: Reconstruct and validate audit program
-        run: |
-          cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/build_vedai_relevant_1000.py
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('/tmp/build_vedai_relevant_1000.py')
-          s = p.read_text()
-          s = s.replace('timeout=90', 'timeout=12')
-          old = '    for url in urls:\n'
-          new = '''    preferred_hosts = ("arxiv.org", "openaccess.thecvf.com", "papers.nips.cc", "proceedings.neurips.cc", "proceedings.mlr.press", "openreview.net")\n    fast_urls = [u for u in urls if any(h in u for h in preferred_hosts)]\n    for url in fast_urls[:2]:\n'''
-          if old not in s:
-              raise SystemExit('URL loop insertion point not found')
-          s = s.replace(old, new, 1)
-          old = '                    eligible.append(rec)\n'
-          new = '''                    eligible.append(rec)\n                    if len(eligible) >= max(TARGET_N + 100, 1100):\n                        for pending in futures:\n                            pending.cancel()\n                        print(f"quality reserve reached: {len(eligible)}; cancelling pending downloads")\n                        break\n'''
-          if old not in s:
-              raise SystemExit('early-stop insertion point not found')
-          p.write_text(s.replace(old, new, 1))
-          PY
-          python -m py_compile /tmp/build_vedai_relevant_1000.py
-          sha256sum /tmp/build_vedai_relevant_1000.py
-          wc -c /tmp/build_vedai_relevant_1000.py
-
-      - name: Build relevance-controlled 1000-paper full-text corpus
-        run: |
-          python /tmp/build_vedai_relevant_1000.py --target 1000 --out "$AUDIT_OUT"
-
-      - name: Verify audit contract
-        run: |
-          python - <<'PY'
-          import csv, json, pathlib
-          root = pathlib.Path('artifacts/vedai_relevant_1000')
-          rows = list(csv.DictReader((root / 'registry_1000.csv').open(encoding='utf-8-sig')))
-          qrows = list(csv.DictReader((root / 'question_evidence_matrix.csv').open(encoding='utf-8-sig')))
-          s = json.loads((root / 'audit_summary.json').read_text(encoding='utf-8'))
-          assert len(rows) == 1000, len(rows)
-          assert s['selected_fulltexts'] == 1000, s
-          assert s['unique_fulltext_sha256'] == 1000, s
-          assert s['unique_doi_or_title'] == 1000, s
-          assert s['method_experiment_result_complete'] == 1000, s
-          assert s['word_count_min'] >= 2600, s
-          assert set(r['venue_tier'] for r in rows) <= {'A', 'B'}
-          assert all(2021 <= int(r['year']) <= 2026 for r in rows)
-          assert len(set(r['openalex_id'] for r in rows)) == 1000
-          assert len(set(r['fulltext_sha256'] for r in rows)) == 1000
-          assert len(qrows) == 18 * 50, len(qrows)
-          assert len({r['question_id'] for r in qrows}) == 18
-          assert (root / 'question_evidence_top50.json').exists()
-          assert (root / 'SHA256SUMS.txt').exists()
-          print(json.dumps(s, ensure_ascii=False, indent=2))
-          PY
-
-      - name: Upload reproducible audit artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vedai-relevant-1000-fulltext-audit
-          path: artifacts/vedai_relevant_1000
-          if-no-files-found: error
-          compression-level: 9
-          retention-days: 7
+      - run: echo "Superseded by the relevance-controlled CVPR 2025 full-text audit."
