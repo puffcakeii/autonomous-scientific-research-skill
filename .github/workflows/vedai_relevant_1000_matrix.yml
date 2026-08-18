@@ -1,0 +1,192 @@
+name: VEDAI relevant 1000-paper matrix audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/vedai_relevant_1000_matrix.yml'
+      - 'scripts/vedai_lit_parts/**'
+
+permissions:
+  contents: read
+
+env:
+  TARGET_N: '1000'
+  YEAR_MIN: '2021'
+  YEAR_MAX: '2026'
+  MAX_CANDIDATES: '9000'
+  MIN_WORDS: '2600'
+  MAX_PDF_MB: '60'
+  AUDIT_CACHE: .cache/vedai_literature
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy pandas scikit-learn
+      - name: Build high-quality metadata pool
+        run: |
+          cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/auditlib.py
+          python -m py_compile /tmp/auditlib.py
+          PYTHONPATH=/tmp python - <<'PY'
+          import dataclasses, json
+          import auditlib
+          works = auditlib.query_openalex()
+          rows=[]
+          for w in works:
+              d=dataclasses.asdict(w)
+              d['query_families']=sorted(d['query_families'])
+              rows.append(d)
+          open('candidates.json','w',encoding='utf-8').write(json.dumps(rows,ensure_ascii=False))
+          print('quality metadata candidates',len(rows))
+          assert len(rows) >= 1500, len(rows)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vedai-candidates
+          path: candidates.json
+          compression-level: 9
+          retention-days: 3
+
+  shard:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy pandas scikit-learn
+      - uses: actions/download-artifact@v4
+        with:
+          name: vedai-candidates
+          path: input
+      - name: Download and parse full texts for shard ${{ matrix.shard }}
+        env:
+          SHARD_ID: ${{ matrix.shard }}
+          SHARD_N: '8'
+        run: |
+          cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/auditlib.py
+          PYTHONPATH=/tmp python - <<'PY'
+          import concurrent.futures as cf
+          import gzip, json, os, pickle, shutil, tempfile
+          from pathlib import Path
+          import auditlib
+
+          sid=int(os.environ['SHARD_ID']); nsh=int(os.environ['SHARD_N'])
+          raw=json.load(open('input/candidates.json',encoding='utf-8'))
+          works=[]
+          for d in raw:
+              d['query_families']=set(d['query_families'])
+              works.append(auditlib.Work(**d))
+          # Interleaving in query_openalex already protects topic coverage; shard round-robin keeps it.
+          works=[w for i,w in enumerate(works) if i % nsh == sid][:520]
+          root=Path(tempfile.mkdtemp(prefix=f'vedai_shard_{sid}_'))
+          eligible=[]
+          try:
+              with cf.ThreadPoolExecutor(max_workers=10) as ex:
+                  futs={ex.submit(auditlib.download_one,w,i,root):(i,w) for i,w in enumerate(works)}
+                  for n,fut in enumerate(cf.as_completed(futs),1):
+                      try: rec=fut.result()
+                      except Exception as e:
+                          rec=None
+                      if rec: eligible.append(rec)
+                      if len(eligible)>=190:
+                          for p in futs: p.cancel()
+                          break
+              # PDF hash dedup inside shard.
+              unique={}
+              for rec in sorted(eligible,key=lambda r:(r['work']['venue_tier']=='A',r['work']['cited_by_count'],r['word_count']),reverse=True):
+                  unique.setdefault(rec['pdf_sha256'],rec)
+              eligible=list(unique.values())
+              with gzip.open(f'shard_{sid}.pkl.gz','wb',compresslevel=6) as f:
+                  pickle.dump(eligible,f,protocol=pickle.HIGHEST_PROTOCOL)
+              print('shard',sid,'attempted',len(works),'eligible',len(eligible))
+              assert len(eligible)>=100, len(eligible)
+          finally:
+              shutil.rmtree(root,ignore_errors=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vedai-shard-${{ matrix.shard }}
+          path: shard_${{ matrix.shard }}.pkl.gz
+          compression-level: 0
+          retention-days: 3
+
+  merge:
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy pandas scikit-learn
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vedai-shard-*
+          path: shards
+          merge-multiple: true
+      - name: Deduplicate, balance, rank evidence, and verify
+        run: |
+          cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/auditlib.py
+          PYTHONPATH=/tmp python - <<'PY'
+          import gzip, json, pickle
+          from pathlib import Path
+          import auditlib
+
+          allrec=[]
+          for p in sorted(Path('shards').glob('shard_*.pkl.gz')):
+              with gzip.open(p,'rb') as f: allrec.extend(pickle.load(f))
+          unique={}
+          for rec in sorted(allrec,key=lambda r:(r['work']['venue_tier']=='A',r['work']['cited_by_count'],r['word_count']),reverse=True):
+              unique.setdefault(rec['pdf_sha256'],rec)
+          eligible=list(unique.values())
+          print('merged raw',len(allrec),'unique full texts',len(eligible))
+          assert len(eligible)>=1000, len(eligible)
+          selected=auditlib.balanced_select(eligible,1000)
+          out=Path('artifacts/vedai_relevant_1000')
+          auditlib.write_outputs(selected,eligible,out)
+          auditlib.rank_evidence(selected,out)
+          # Rebuild integrity manifest after question evidence files are added.
+          import hashlib
+          manifest=[]
+          for p in sorted(x for x in out.rglob('*') if x.is_file() and x.name!='SHA256SUMS.txt'):
+              manifest.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(out).as_posix()}")
+          (out/'SHA256SUMS.txt').write_text('\n'.join(manifest)+'\n',encoding='utf-8')
+          print((out/'audit_summary.json').read_text(encoding='utf-8'))
+          PY
+          python - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path('artifacts/vedai_relevant_1000')
+          rows=list(csv.DictReader((root/'registry_1000.csv').open(encoding='utf-8-sig')))
+          qrows=list(csv.DictReader((root/'question_evidence_matrix.csv').open(encoding='utf-8-sig')))
+          s=json.loads((root/'audit_summary.json').read_text(encoding='utf-8'))
+          assert len(rows)==1000
+          assert s['selected_fulltexts']==1000
+          assert s['unique_fulltext_sha256']==1000
+          assert s['unique_doi_or_title']==1000
+          assert s['method_experiment_result_complete']==1000
+          assert s['word_count_min']>=2600
+          assert len(qrows)==900 and len({r['question_id'] for r in qrows})==18
+          assert (root/'SHA256SUMS.txt').exists()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vedai-relevant-1000-fulltext-audit-matrix
+          path: artifacts/vedai_relevant_1000
+          compression-level: 9
+          retention-days: 7
