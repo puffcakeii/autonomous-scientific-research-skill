@@ -8,6 +8,12 @@ on:
     paths:
       - '.github/workflows/vedai_relevant_1000.yml'
       - 'scripts/vedai_lit_parts/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/vedai_relevant_1000.yml'
+      - 'scripts/vedai_lit_parts/**'
 
 permissions:
   contents: read
