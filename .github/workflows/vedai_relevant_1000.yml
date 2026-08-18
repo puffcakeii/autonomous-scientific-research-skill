@@ -28,7 +28,7 @@ env:
   MAX_DOWNLOAD_ATTEMPTS: '2600'
   MIN_WORDS: '2600'
   MAX_PDF_MB: '60'
-  WORKERS: '10'
+  WORKERS: '18'
 
 jobs:
   audit:
@@ -51,6 +51,7 @@ jobs:
       - name: Reconstruct and validate audit program
         run: |
           cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/build_vedai_relevant_1000.py
+          sed -i 's/timeout=90/timeout=35/g' /tmp/build_vedai_relevant_1000.py
           python -m py_compile /tmp/build_vedai_relevant_1000.py
           sha256sum /tmp/build_vedai_relevant_1000.py
           wc -c /tmp/build_vedai_relevant_1000.py
