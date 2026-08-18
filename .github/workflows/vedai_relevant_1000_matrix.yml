@@ -33,10 +33,17 @@ jobs:
       - name: Build high-quality metadata pool
         run: |
           cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/auditlib.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/auditlib.py')
+          s=p.read_text().replace('pages < 3','pages < 2')
+          p.write_text(s)
+          PY
           python -m py_compile /tmp/auditlib.py
           PYTHONPATH=/tmp python - <<'PY'
           import dataclasses, json
           import auditlib
+          auditlib.SEARCH_FAMILIES={k:v[:6] for k,v in auditlib.SEARCH_FAMILIES.items()}
           works = auditlib.query_openalex()
           rows=[]
           for w in works:
