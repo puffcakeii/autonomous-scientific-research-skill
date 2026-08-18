@@ -79,6 +79,16 @@ jobs:
           SHARD_N: '8'
         run: |
           cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/auditlib.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/auditlib.py')
+          s=p.read_text()
+          s=s.replace('timeout=90','timeout=15')
+          old='    for url in urls:\n'
+          new='''    preferred_hosts=("arxiv.org","openaccess.thecvf.com","papers.nips.cc","proceedings.neurips.cc","proceedings.mlr.press","openreview.net")\n    fast_urls=[u for u in urls if any(h in u for h in preferred_hosts)]\n    for url in fast_urls[:3]:\n'''
+          if old not in s: raise SystemExit('URL loop not found')
+          p.write_text(s.replace(old,new,1))
+          PY
           PYTHONPATH=/tmp python - <<'PY'
           import concurrent.futures as cf
           import gzip, json, os, pickle, shutil, tempfile
@@ -91,22 +101,19 @@ jobs:
           for d in raw:
               d['query_families']=set(d['query_families'])
               works.append(auditlib.Work(**d))
-          # Interleaving in query_openalex already protects topic coverage; shard round-robin keeps it.
-          works=[w for i,w in enumerate(works) if i % nsh == sid][:520]
+          works=[w for i,w in enumerate(works) if i % nsh == sid][:650]
           root=Path(tempfile.mkdtemp(prefix=f'vedai_shard_{sid}_'))
           eligible=[]
           try:
-              with cf.ThreadPoolExecutor(max_workers=10) as ex:
+              with cf.ThreadPoolExecutor(max_workers=16) as ex:
                   futs={ex.submit(auditlib.download_one,w,i,root):(i,w) for i,w in enumerate(works)}
                   for n,fut in enumerate(cf.as_completed(futs),1):
                       try: rec=fut.result()
-                      except Exception as e:
-                          rec=None
+                      except Exception: rec=None
                       if rec: eligible.append(rec)
-                      if len(eligible)>=190:
+                      if len(eligible)>=180:
                           for p in futs: p.cancel()
                           break
-              # PDF hash dedup inside shard.
               unique={}
               for rec in sorted(eligible,key=lambda r:(r['work']['venue_tier']=='A',r['work']['cited_by_count'],r['word_count']),reverse=True):
                   unique.setdefault(rec['pdf_sha256'],rec)
@@ -114,7 +121,7 @@ jobs:
               with gzip.open(f'shard_{sid}.pkl.gz','wb',compresslevel=6) as f:
                   pickle.dump(eligible,f,protocol=pickle.HIGHEST_PROTOCOL)
               print('shard',sid,'attempted',len(works),'eligible',len(eligible))
-              assert len(eligible)>=100, len(eligible)
+              assert len(eligible)>=115, len(eligible)
           finally:
               shutil.rmtree(root,ignore_errors=True)
           PY
@@ -144,7 +151,7 @@ jobs:
         run: |
           cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/auditlib.py
           PYTHONPATH=/tmp python - <<'PY'
-          import gzip, json, pickle
+          import gzip, pickle
           from pathlib import Path
           import auditlib
 
@@ -161,7 +168,6 @@ jobs:
           out=Path('artifacts/vedai_relevant_1000')
           auditlib.write_outputs(selected,eligible,out)
           auditlib.rank_evidence(selected,out)
-          # Rebuild integrity manifest after question evidence files are added.
           import hashlib
           manifest=[]
           for p in sorted(x for x in out.rglob('*') if x.is_file() and x.name!='SHA256SUMS.txt'):
