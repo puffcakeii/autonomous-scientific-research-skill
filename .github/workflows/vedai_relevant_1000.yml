@@ -25,10 +25,10 @@ env:
   YEAR_MIN: '2021'
   YEAR_MAX: '2026'
   MAX_CANDIDATES: '9000'
-  MAX_DOWNLOAD_ATTEMPTS: '2600'
+  MAX_DOWNLOAD_ATTEMPTS: '2200'
   MIN_WORDS: '2600'
   MAX_PDF_MB: '60'
-  WORKERS: '30'
+  WORKERS: '24'
 
 jobs:
   audit:
@@ -51,13 +51,14 @@ jobs:
       - name: Reconstruct and validate audit program
         run: |
           cat scripts/vedai_lit_parts/part_*.b64 | base64 --decode > /tmp/build_vedai_relevant_1000.py
-          sed -i 's/timeout=90/timeout=20/g' /tmp/build_vedai_relevant_1000.py
+          sed -i 's/timeout=90/timeout=15/g' /tmp/build_vedai_relevant_1000.py
+          sed -i 's/for url in urls:/for url in urls[:4]:/g' /tmp/build_vedai_relevant_1000.py
           python - <<'PY'
           from pathlib import Path
           p = Path('/tmp/build_vedai_relevant_1000.py')
           s = p.read_text()
           old = '                    eligible.append(rec)\n'
-          new = '''                    eligible.append(rec)\n                    if len(eligible) >= max(TARGET_N + 150, 1150):\n                        for pending in futures:\n                            pending.cancel()\n                        print(f"quality reserve reached: {len(eligible)}; cancelling pending downloads")\n                        break\n'''
+          new = '''                    eligible.append(rec)\n                    if len(eligible) >= max(TARGET_N + 100, 1100):\n                        for pending in futures:\n                            pending.cancel()\n                        print(f"quality reserve reached: {len(eligible)}; cancelling pending downloads")\n                        break\n'''
           if old not in s:
               raise SystemExit('early-stop insertion point not found')
           p.write_text(s.replace(old, new, 1))
