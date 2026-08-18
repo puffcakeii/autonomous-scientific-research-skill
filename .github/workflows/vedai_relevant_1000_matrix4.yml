@@ -1,0 +1,19 @@
+name: VEDAI relevant 1000-paper fast matrix audit (superseded)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: vedai-superseded-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Superseded by the relevance-controlled CVPR 2025 full-text audit."
