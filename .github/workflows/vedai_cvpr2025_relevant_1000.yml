@@ -7,8 +7,10 @@ on:
     paths:
       - '.github/workflows/vedai_cvpr2025_relevant_1000.yml'
       - 'scripts/build_vedai_cvpr2025_relevant_1000.py'
-      - 'scripts/build_cvpr2025_fulltext_audit.py'
-      - 'scripts/build_cvpr2025_fulltext_audit_v2.py'
+
+concurrency:
+  group: vedai-cvpr2025-relevant-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -21,7 +23,7 @@ env:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,8 +38,6 @@ jobs:
           echo "full texts=$n"
           test "$n" -gt 2800
       - name: Parse all full texts and select 1,000 by VEDAI decision relevance
-        env:
-          PYTHONPATH: scripts
         run: python scripts/build_vedai_cvpr2025_relevant_1000.py
       - name: Verify contract
         run: |
