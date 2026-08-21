@@ -1,0 +1,128 @@
+name: Multi-source 1000-paper vision full-text audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - literature/multisource-1000-20260821
+    paths:
+      - '.github/workflows/multisource_vision_1000.yml'
+      - 'scripts/build_multisource_vision_1000.py'
+      - 'scripts/run_multisource_vision_1000_v3.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/multisource_vision_1000.yml'
+      - 'scripts/build_multisource_vision_1000.py'
+      - 'scripts/run_multisource_vision_1000_v3.py'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy
+      - name: Build multi-venue metadata pool
+        run: python scripts/run_multisource_vision_1000_v3.py metadata --output candidates.json --summary candidate_summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multisource-candidates
+          path: |
+            candidates.json
+            candidate_summary.json
+          compression-level: 9
+          retention-days: 7
+
+  shard:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy
+      - uses: actions/download-artifact@v4
+        with:
+          name: multisource-candidates
+          path: input
+      - name: Download and parse full texts
+        run: >-
+          python scripts/build_multisource_vision_1000.py shard
+          --input input/candidates.json
+          --output shard_${{ matrix.shard }}.pkl.gz
+          --shard-id ${{ matrix.shard }}
+          --shard-count 12
+          --max-attempts 700
+          --workers 18
+          --target-per-shard 150
+          --minimum-per-shard 90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multisource-shard-${{ matrix.shard }}
+          path: shard_${{ matrix.shard }}.pkl.gz
+          compression-level: 0
+          retention-days: 7
+
+  merge:
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: multisource-shard-*
+          path: shards
+          merge-multiple: true
+      - name: Deduplicate, enforce diversity, and write audit package
+        run: python scripts/build_multisource_vision_1000.py merge --input-dir shards --output artifacts/multisource_vision_1000
+      - name: Verify hard contract
+        run: |
+          python - <<'PY'
+          import csv, json, pathlib
+          root=pathlib.Path('artifacts/multisource_vision_1000')
+          s=json.loads((root/'audit_summary.json').read_text(encoding='utf-8'))
+          rows=list(csv.DictReader((root/'registry_1000.csv').open(encoding='utf-8-sig')))
+          assert len(rows)==1000
+          assert s['selected_fulltexts']==1000
+          assert s['unique_pdf_sha256']==1000
+          assert s['unique_doi_or_title']==1000
+          assert s['venue_count']>=12
+          assert s['kind_counts']['journal']>=300
+          assert s['kind_counts']['conference']>=500
+          assert s['max_single_venue_share']<=0.11
+          assert s['max_single_year_share']<=0.34
+          assert s['method_experiment_result_complete']==1000
+          assert (root/'notes_1000.jsonl').exists()
+          assert (root/'core_150.csv').exists()
+          assert (root/'candidate_direction_matrix.json').exists()
+          assert (root/'SHA256SUMS.txt').exists()
+          print(json.dumps(s,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multisource-vision-1000-fulltext-audit
+          path: artifacts/multisource_vision_1000
+          compression-level: 9
+          retention-days: 14
