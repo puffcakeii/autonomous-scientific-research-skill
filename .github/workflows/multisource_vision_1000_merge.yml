@@ -62,3 +62,5 @@ jobs:
           path: artifacts/multisource_vision_1000
           compression-level: 9
           retention-days: 14
+
+# Triggered after all 12 source shards completed successfully.
