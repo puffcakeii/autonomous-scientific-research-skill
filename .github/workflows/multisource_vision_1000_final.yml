@@ -8,6 +8,11 @@ on:
     paths:
       - '.github/workflows/multisource_vision_1000_final.yml'
       - 'scripts/finalize_multisource_vision_1000.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/multisource_vision_1000_final.yml'
+      - 'scripts/finalize_multisource_vision_1000.py'
 
 permissions:
   contents: read
@@ -84,3 +89,5 @@ jobs:
           path: artifacts/multisource_vision_1000_final
           compression-level: 9
           retention-days: 30
+
+# Final gate: diversified conferences and journals, no single venue over 11%.
