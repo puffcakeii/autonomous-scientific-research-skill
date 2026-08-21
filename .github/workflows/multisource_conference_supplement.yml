@@ -46,3 +46,5 @@ jobs:
           path: supplement_${{ matrix.conference }}.pkl.gz
           compression-level: 0
           retention-days: 14
+
+# Official sources only: PMLR, ECVA, and NeurIPS proceedings.
