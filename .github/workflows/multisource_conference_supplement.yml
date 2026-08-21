@@ -1,0 +1,48 @@
+name: Official conference full-text supplement
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - literature/multisource-1000-20260821
+    paths:
+      - '.github/workflows/multisource_conference_supplement.yml'
+      - 'scripts/build_conference_supplement.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/multisource_conference_supplement.yml'
+      - 'scripts/build_conference_supplement.py'
+
+permissions:
+  contents: read
+
+jobs:
+  supplement:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        conference: [ICML, ECCV, NeurIPS]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests pymupdf numpy beautifulsoup4
+      - name: Download and parse official ${{ matrix.conference }} full texts
+        run: >-
+          python scripts/build_conference_supplement.py
+          --conference ${{ matrix.conference }}
+          --output supplement_${{ matrix.conference }}.pkl.gz
+          --target 150
+          --max-attempts 1000
+          --workers 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multisource-supplement-${{ matrix.conference }}
+          path: supplement_${{ matrix.conference }}.pkl.gz
+          compression-level: 0
+          retention-days: 14
