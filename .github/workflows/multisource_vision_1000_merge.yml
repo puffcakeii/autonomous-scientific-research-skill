@@ -8,6 +8,11 @@ on:
     paths:
       - '.github/workflows/multisource_vision_1000_merge.yml'
       - 'scripts/merge_multisource_vision_1000_v2.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/multisource_vision_1000_merge.yml'
+      - 'scripts/merge_multisource_vision_1000_v2.py'
 
 permissions:
   contents: read
@@ -63,4 +68,4 @@ jobs:
           compression-level: 9
           retention-days: 14
 
-# Triggered after all 12 source shards completed successfully.
+# Reuses the immutable full-text shards from run 32435897791.
