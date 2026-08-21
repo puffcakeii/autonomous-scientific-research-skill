@@ -2,6 +2,12 @@ name: Multi-source 1000-paper vision full-text audit
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - literature/multisource-1000-20260821
+    paths:
+      - '.github/workflows/multisource_vision_1000.yml'
+      - 'scripts/build_multisource_vision_1000.py'
   pull_request:
     branches: [main]
     paths:
