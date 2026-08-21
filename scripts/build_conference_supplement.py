@@ -6,7 +6,6 @@ import argparse
 import concurrent.futures as cf
 import gzip
 import hashlib
-import json
 import pickle
 import re
 import tempfile
@@ -43,25 +42,65 @@ def get(session: requests.Session, url: str) -> str:
 
 
 def pmlr_candidates(session: requests.Session) -> list[dict]:
+    """Parse official PMLR volume pages.
+
+    PMLR places the paper title in ``p.title`` and uses separate ``abs`` and
+    ``Download PDF`` links. The link text itself is therefore not the title.
+    """
     volumes = [(139, 2021), (162, 2022), (202, 2023), (235, 2024), (267, 2025)]
-    out = []
+    out, global_seen = [], set()
     for volume, year in volumes:
         root = f"https://proceedings.mlr.press/v{volume}/"
         soup = BeautifulSoup(get(session, root), "html.parser")
-        seen = set()
-        for a in soup.find_all("a", href=True):
-            href = urljoin(root, a["href"])
-            text = " ".join(a.get_text(" ", strip=True).split())
-            if not href.endswith(".html") or f"/v{volume}/" not in href:
+        for title_node in soup.select("p.title"):
+            title = " ".join(title_node.get_text(" ", strip=True).split())
+            if len(title) < 8 or title_score(title) <= 0:
                 continue
-            stem = Path(urlparse(href).path).stem
-            if stem in {"index", ""} or href in seen or len(text) < 8:
+            container = title_node.parent
+            links = container.find_all("a", href=True) if container else []
+            if not links:
+                # Some versions put title/details/links as sibling paragraphs.
+                cursor = title_node
+                for _ in range(4):
+                    cursor = cursor.find_next_sibling()
+                    if cursor is None or (getattr(cursor, "get", lambda *_: None)("class") and "title" in (cursor.get("class") or [])):
+                        break
+                    links.extend(cursor.find_all("a", href=True))
+            page_url = ""
+            pdf_url = ""
+            for a in links:
+                href = urljoin(root, a["href"])
+                label = " ".join(a.get_text(" ", strip=True).split()).lower()
+                if not page_url and (label == "abs" or (href.endswith(".html") and f"/v{volume}/" in href)):
+                    page_url = href
+                if not pdf_url and (href.lower().endswith(".pdf") or "download pdf" in label):
+                    pdf_url = href
+            if not page_url:
+                # Fall back to the first nearby abstract link.
+                a = title_node.find_next("a", href=True)
+                if a:
+                    page_url = urljoin(root, a["href"])
+            if not pdf_url:
+                # PMLR abstract pages conventionally expose a raw-GitHub PDF;
+                # fetch that page and read the explicit PDF link instead of
+                # guessing its path.
+                if page_url:
+                    try:
+                        psoup = BeautifulSoup(get(session, page_url), "html.parser")
+                        for a in psoup.find_all("a", href=True):
+                            href = urljoin(page_url, a["href"])
+                            if href.lower().endswith(".pdf"):
+                                pdf_url = href
+                                break
+                    except Exception:
+                        pass
+            if not page_url or not pdf_url:
                 continue
-            seen.add(href)
-            if title_score(text) <= 0:
+            key = (year, title.lower())
+            if key in global_seen:
                 continue
-            pdf = f"https://proceedings.mlr.press/v{volume}/{stem}/{stem}.pdf"
-            out.append({"title": text, "year": year, "venue": "ICML", "page_url": href, "pdf_url": pdf})
+            global_seen.add(key)
+            out.append({"title": title, "year": year, "venue": "ICML", "page_url": page_url, "pdf_url": pdf_url})
     out.sort(key=lambda x: (-title_score(x["title"]), -x["year"], x["title"].lower()))
     return out
 
@@ -87,8 +126,6 @@ def ecva_candidates(session: requests.Session) -> list[dict]:
                     title = candidate
                     break
         if not title:
-            # ECVA filenames preserve much of the title; final PDF full text is
-            # still the evidence source even when this fallback is used.
             title = Path(urlparse(href).path).stem.replace("_", " ")
         out.append({"title": title, "year": 2024, "venue": "ECCV", "page_url": root, "pdf_url": href})
     out.sort(key=lambda x: (-title_score(x["title"]), x["title"].lower()))
@@ -108,7 +145,8 @@ def neurips_candidates(session: requests.Session) -> list[dict]:
             seen.add(href)
             if title_score(title) <= 0:
                 continue
-            pdf = href.replace("-Abstract-Conference.html", "-Paper-Conference.pdf")
+            # Abstract pages are under /hash/ while PDF files are under /file/.
+            pdf = href.replace("/hash/", "/file/").replace("-Abstract-Conference.html", "-Paper-Conference.pdf")
             out.append({"title": title, "year": year, "venue": "NeurIPS", "page_url": href, "pdf_url": pdf})
     out.sort(key=lambda x: (-title_score(x["title"]), -x["year"], x["title"].lower()))
     return out
